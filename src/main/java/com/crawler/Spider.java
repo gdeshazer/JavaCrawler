@@ -72,6 +72,7 @@ public class Spider {
 
     private static int _visitedPages;
     private static int _totalLinks = 0;
+
     private static final int MAX_PAGES_TO_SEARCH = 10;
     private static final int DELAY_TO_REQUEST = 1000;
     private static final int NUMBER_OF_LINKS_PER_DOMAIN = 5;
