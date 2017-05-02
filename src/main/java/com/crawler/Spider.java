@@ -15,11 +15,9 @@ import java.util.stream.Collectors;
 /**
  * Created by grantdeshazer on 4/29/17.
  *
- * TODO: Add blacklist ~> a database table?
  * TODO: Add robot.txt compliance
  * TODO: Add front end interface
- * TODO: Update Database to set recordid column as a sequence
- * TODO: Add a logfile generator to collect visited sites and running parameters
+ * TODO: Add a logfile generator to collect visited sites and running parameters from a crawl
  *
  * Basic Crawler/spider
  *    Crawler stores all of its links both visited and unvisited into a postgres database
@@ -39,10 +37,9 @@ import java.util.stream.Collectors;
  *    Assumptions:
  *      - The database table has already been created as follows, it will not check if it does exist:
  *          create table record (
- *              recordid int,
- *              url text,
+ *              recordid sequence primary key,
+ *              url text unique,
  *              visited boolean,
- *              primary ket (recordid)
  *          )
  *      - database connection will be handled and closed by another class
  *      - assumes database is set to auto commit
@@ -57,7 +54,8 @@ public class Spider {
     private static int _totalLinks = 0;
     private static final int MAX_PAGES_TO_SEARCH = 10;
     private static final int DELAY_TO_REQUEST = 1000 * 5;
-    private static final int NUMBER_OF_LINKS_PER_DOMAIN = 10;
+    private static final int NUMBER_OF_LINKS_PER_DOMAIN = 20;
+    private static final String _filterTypes = "css|gif|jpg";
 
 
     public static void main (String[] args) throws SQLException, IOException{
@@ -155,43 +153,101 @@ public class Spider {
     public static String nextURL(){
         String nextURL = "";
 
+        PreparedStatement statement;
+        ResultSet count;
+        ResultSet resultSet;
+
+        int randomInt = 0;
+
+        boolean newURL = false;
+
         try {
-            ResultSet unvisited = getUnvisited();
+            statement = db.connection.prepareStatement("SELECT count(recordid) FROM record");
+            count = statement.executeQuery();
 
-            if(unvisited.next()){
-                nextURL = unvisited.getString("url");
-                String sql = "update record set visited=true where url=?;";
-                PreparedStatement statement = db.connection.prepareStatement(sql);
-                statement.setString(1, nextURL);
-                statement.execute();
-                _visitedPages++;
-
+            if (count.next()) {
+                randomInt = count.getInt("count");
             } else {
-                System.out.println("No unvisited Pages left!");
+                randomInt = (int) (10.00 * Math.random());
             }
 
+            while (!newURL) {
+                randomInt = (int) ((double) randomInt * Math.random());
 
-        } catch (SQLException e){
+                statement = db.connection.prepareStatement("SELECT url,visited FROM record WHERE recordid=?;");
+                statement.setInt(1, randomInt);
+                resultSet = statement.executeQuery();
+
+                if (resultSet.next()) {
+                    if (!resultSet.getBoolean("visited") && !onBlacklist(resultSet.getString("url"))) {
+                        nextURL = resultSet.getString("url");
+                        statement = db.connection.prepareStatement("UPDATE record SET visited=TRUE WHERE url=?");
+                        statement.setString(1, nextURL);
+                        statement.execute();
+                        _visitedPages++;
+                        newURL = true;
+                    }
+                } else {
+                    System.out.println("Couldn't find a new URL");
+                }
+
+
+            }
+        } catch (Exception e){
             e.printStackTrace();
+            System.err.println("Failed to get new webpage in method nextURL");
         }
 
         return nextURL;
     }
 
 
+    private static boolean onBlacklist(String url){
+        try{
+            URI uri = new URI(url);
+            String domain = uri.getHost();
+            PreparedStatement statement = db.connection.prepareStatement("select url from blacklist where url=? or url=? or url like ?");
+            statement.setString(1, url);
+            statement.setString(2, domain);
+            statement.setString(3, "%" + domain + "%");
+
+            ResultSet resultSet = statement.executeQuery();
+
+            if(resultSet.next()){
+                System.out.println(url + "::Blacklisted");
+                return true;
+            }
+
+
+        } catch (Exception e ){
+            System.err.println("Couldn't decide if url is on blacklist.  " +
+                    "Could be either a url format problem or was unable to query" +
+                    " database.");
+            e.printStackTrace();
+            return true;
+        }
+
+        return false;
+    }
+
+
+    private static boolean containsNonHTMLType(String url){
+
+    }
+
     private static ResultSet getUnvisited() throws SQLException {
-        return db.runSql("select * from record where visited=false;");
+        return db.queryDB("select * from record where visited=false;");
     }
 
 
     private static ResultSet getVisited() throws SQLException {
-        return db.runSql("select * from record where visited=TRUE;");
+        return db.queryDB("select * from record where visited=TRUE;");
     }
 
 
     private static int getMax(String collumn) throws SQLException{
         String sql = "select max(" + collumn + ") from record";
-        ResultSet resultSet = db.runSql(sql);
+        ResultSet resultSet = db.queryDB(sql);
 
         if(resultSet.next()){
             return resultSet.getInt("max");
@@ -207,9 +263,9 @@ public class Spider {
             try {
                 URI uri = new URI(p);
                 String domain = uri.getHost();
-//              System.out.println("Domain name to be tested: " + domain);
                 PreparedStatement statement = db.connection.prepareStatement("select count(*) from record where url like ?;");
-                statement.setString(1, "'%"+ domain + "%'");
+                statement.setString(1, "%"+ domain + "%");
+//                System.out.println("Executing query: " + statement.toString());
                 ResultSet resultSet = statement.executeQuery();
 
                 if(resultSet.next()){
