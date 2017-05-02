@@ -4,9 +4,9 @@ import com.database.DB;
 
 import java.io.IOException;
 import java.net.URI;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.List;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -14,11 +14,45 @@ import java.util.stream.Collectors;
 
 /**
  * Created by grantdeshazer on 4/29/17.
+ *
+ * TODO: Add blacklist ~> a database table?
+ * TODO: Add robot.txt compliance
+ * TODO: Add front end interface
+ * TODO: Update Database to set recordid column as a sequence
+ * TODO: Add a logfile generator to collect visited sites and running parameters
+ *
+ * Basic Crawler/spider
+ *    Crawler stores all of its links both visited and unvisited into a postgres database
+ *
+ *    This class does not make any attempts to close connections to the database and assumes all connection
+ *    handling is dealt with in the DB class.
+ *
+ *    This class doesn't do any of the crawling, instead it focuses on parsing returned urls, and placing them
+ *    into the database.  This class also tracks if a site has been visited or not.
+ *
+ *    Behavior of the crawler is controlled by the following:
+ *      - MAX_PAGES_TO_SEARCH          ::  maximum number of pages to visit in a crawl session
+ *      - DELAY_TO_REQUEST             ::  number of milliseconds to wait between sending another http request to server
+ *      - NUMBER_OF_LINKS_PER_DOMAIN   ::  controls the number of links under a specific domain to be stored into the
+ *                                         database
+ *
+ *    Assumptions:
+ *      - The database table has already been created as follows, it will not check if it does exist:
+ *          create table record (
+ *              recordid int,
+ *              url text,
+ *              visited boolean,
+ *              primary ket (recordid)
+ *          )
+ *      - database connection will be handled and closed by another class
+ *      - assumes database is set to auto commit
+ *      - if all weblinks are marked as visited, or database is empty, the crawler will go to the page passed to
+ *        processPage
+ *
  */
 public class Spider {
     public static final DB db = new DB();
 
-    private static int _recordID;
     private static int _visitedPages;
     private static int _totalLinks = 0;
     private static final int MAX_PAGES_TO_SEARCH = 10;
@@ -27,41 +61,46 @@ public class Spider {
 
 
     public static void main (String[] args) throws SQLException, IOException{
-        _recordID = getMax("recordid");
-
         processPage("http://www.mines.edu");
+//        processPage("http://amazon.com/");
     }
 
 
     public static void processPage(String url) throws SQLException, IOException{
-        while(_visitedPages <= MAX_PAGES_TO_SEARCH) {
-            String sql = "";
-            String currentURL = "";
-            Statement statement = null;
+        String sql = "";
+        String currentURL = "";
+        PreparedStatement statement;
+        boolean newStart = false;
 
-            SpiderLeg leg = new SpiderLeg();
+        SpiderLeg leg = new SpiderLeg();
 
-            ResultSet unvisitedPages = getUnvisited();
+        statement = db.connection.prepareStatement("select url from record where url=?");
+        statement.setString(1,url);
+        ResultSet urlAlreadyInDB = statement.executeQuery();
 
 
-            if (unvisitedPages.next()) {
-
-                if(unvisitedPages.getString("url") == url){
-                    currentURL = url;
-                    sql = "update record set visited=true where url='" + url + "';";
-                    statement = db.connection.createStatement();
-                    statement.executeUpdate(sql);
-//                    db.connection.commit();
-                    _visitedPages++;
-                } else {
-                    currentURL = nextURL();
-                }
-
+        if(urlAlreadyInDB.next() ){
+            if (urlAlreadyInDB.getString("url").contains(url)){
+                currentURL = nextURL();
             } else {
                 currentURL = url;
-                System.out.println("There are no unvisited sites! Going to default site");
+                statement = db.connection.prepareStatement("insert into record (url,visited) values (?, true)");
+                statement.setString(1, url);
+                statement.execute();
                 _visitedPages++;
             }
+        } else if (!db.connection.prepareStatement("select * from record").executeQuery().next()) {
+            currentURL = url;
+            statement = db.connection.prepareStatement("insert into record (url,visited) values (?, true)");
+            statement.setString(1, url);
+            statement.execute();
+            _visitedPages++;
+        } else {
+            currentURL = nextURL();
+        }
+
+
+        while(_visitedPages <= MAX_PAGES_TO_SEARCH) {
 
             leg.crawl(currentURL);
 
@@ -72,12 +111,9 @@ public class Spider {
                 newPageSql = newPageSql.stream().filter(s -> {
                     try {
                         String str = capturedURLS.getString("url");
-//                        System.out.print("Checking: " + str + " against: " + s);
                         if(str.contains(s)){
-//                            System.out.println(" ::matched");
                             return false;
                         } else {
-//                            System.out.println(" ::didn't match");
                             return true;
                         }
                     } catch (Exception e){
@@ -91,20 +127,16 @@ public class Spider {
 
             _totalLinks += newPageSql.size();
 
-            newPageSql.stream().map(s -> "insert into record ( recordid, url, visited) values ( RECORDID, '" + s + "', false);")
-                    .map(s -> {
-                        s = s.replaceFirst("RECORDID", Integer.toString(_recordID));
-                        _recordID++;
-                        return s;
-                    }).forEach(s -> {
-                        try {
-//                            System.out.println("Doing command: " + s + " :: On database");
-                            db.update(s);
-                        } catch (Exception e) {
-                            System.err.println("Failed to update database");
-                            e.printStackTrace();
-                        }
-                    });
+            newPageSql.stream().forEach(s -> {
+                try {
+                    PreparedStatement statement1 = db.connection.prepareStatement("insert into record (url, visited) values (?, false);");
+                    statement1.setString(1, s);
+                    statement1.execute();
+                } catch (Exception e) {
+                    System.err.println("Failed to update database");
+                    e.printStackTrace();
+                }
+            });
 
             try{
                 Thread.sleep(DELAY_TO_REQUEST);
@@ -112,6 +144,8 @@ public class Spider {
                 System.err.println("Failed to sleep");
                 e.printStackTrace();
             }
+
+            currentURL = nextURL();
         }
 
         System.out.println("Collected and stored " + _totalLinks + " web links in this crawl session");
@@ -126,11 +160,10 @@ public class Spider {
 
             if(unvisited.next()){
                 nextURL = unvisited.getString("url");
-
-                String sql = "update record set visited=true where url='" + nextURL + "';";
-                Statement statement = db.connection.createStatement();
-                statement.executeUpdate(sql);
-//                db.connection.commit();
+                String sql = "update record set visited=true where url=?;";
+                PreparedStatement statement = db.connection.prepareStatement(sql);
+                statement.setString(1, nextURL);
+                statement.execute();
                 _visitedPages++;
 
             } else {
@@ -147,15 +180,12 @@ public class Spider {
 
 
     private static ResultSet getUnvisited() throws SQLException {
-        String sql;
-        sql = "select * from record where visited=false;";
-        return db.runSql(sql);
+        return db.runSql("select * from record where visited=false;");
     }
 
 
     private static ResultSet getVisited() throws SQLException {
-        String sql = "select * from record where visited=TRUE;";
-        return db.runSql(sql);
+        return db.runSql("select * from record where visited=TRUE;");
     }
 
 
@@ -174,27 +204,32 @@ public class Spider {
 
     private static Predicate<String> moreThanMaxDomainNames(){
         return p -> {
-          try {
-              URI uri = new URI(p);
-              String domain = uri.getHost();
+            try {
+                URI uri = new URI(p);
+                String domain = uri.getHost();
 //              System.out.println("Domain name to be tested: " + domain);
-              ResultSet resultSet = db.connection.createStatement()
-                      .executeQuery("select count(*) from record where url like '%" + domain + "%';");
+                PreparedStatement statement = db.connection.prepareStatement("select count(*) from record where url like ?;");
+                statement.setString(1, "'%"+ domain + "%'");
+                ResultSet resultSet = statement.executeQuery();
 
-              if(resultSet.next()){
+                if(resultSet.next()){
 //                  int temp = resultSet.getInt("count");
-                  if(resultSet.getInt("count") >= NUMBER_OF_LINKS_PER_DOMAIN) {
+                    if(resultSet.getInt("count") >= NUMBER_OF_LINKS_PER_DOMAIN) {
 //                      System.out.println("More than " + NUMBER_OF_LINKS_PER_DOMAIN + " for the domain " + domain);
-                      return false;
-                  }
-              }
+                        return false;
+                    }
+                }
 
-          } catch (Exception e){
-              e.printStackTrace();
-          }
+            } catch (Exception e){
+                e.printStackTrace();
+            }
 
-          return true;
+            return true;
         };
+    }
+
+    private static String formatURL(String url){
+        return "'" + url + "'";
     }
 
 }
