@@ -1,16 +1,13 @@
 package com.database;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
 
 /**
  * Created by grantdeshazer on 4/29/17.
  */
 public class DB {
     public Connection connection = null;
+    private PreparedStatement _statement;
 
     public DB(){
         try {
@@ -36,20 +33,30 @@ public class DB {
         System.out.println("Opened " + databaseName + " successfully");
     }
 
-    public ResultSet runSql(String sql) throws SQLException{
-        Statement statement = connection.createStatement();
-        ResultSet resultSet = statement.executeQuery(sql);
-        return resultSet;
+    public ResultSet queryDB(String sql) throws SQLException{
+        _statement = connection.prepareStatement(sql);
+        return _statement.executeQuery();
+    }
+
+    public ResultSet replaceStringQuery(String sql, String replacement) throws SQLException{
+        _statement = connection.prepareStatement(sql);
+        _statement.setString(1 , replacement);
+        return _statement.executeQuery();
+    }
+
+    public boolean replaceStringUpdate(String sql, String replacement) throws SQLException{
+        _statement = connection.prepareStatement(sql);
+        _statement.setString(1, replacement);
+        return _statement.execute();
     }
 
     public boolean runSql2(String sql) throws  SQLException{
-        Statement statement = connection.createStatement();
-        return statement.execute(sql);
+        return connection.prepareStatement(sql).execute();
     }
 
     public void update(String sql) throws SQLException{
-        Statement statement = connection.createStatement();
-        statement.executeUpdate(sql);
+        _statement = connection.prepareStatement(sql);
+        _statement.executeUpdate();
     }
 
     @Override
