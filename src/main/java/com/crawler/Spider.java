@@ -1,9 +1,11 @@
 package com.crawler;
 
+import com.database.Cleaner;
 import com.database.DB;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -35,18 +37,34 @@ import java.util.stream.Collectors;
  *      - DELAY_TO_REQUEST             ::  number of milliseconds to wait between sending another http request to server
  *      - NUMBER_OF_LINKS_PER_DOMAIN   ::  controls the number of links under a specific domain to be stored into the
  *                                         database
+ *      - FILTER1                      ::  patterns to filter from the database, prevents pages which link to pdf's
+ *                                         and similar from being used in the crawler
+ *      - FILTER2                      ::  patterns to check for in url, used to verify url is mostly valid
  *
  *    Assumptions:
  *      - The database table has already been created as follows, it will not check if it does exist:
  *          create table record (
- *              recordid sequence primary key,
+ *              recordid serial primary key,
  *              url text unique,
  *              visited boolean,
- *          )
+ *          );
+ *
+ *          create table blacklist (
+ *              id serial primary key,
+ *              url text
+ *          );
+ *
+ *          create table streamCheck (
+ *              id serial primary key,
+ *              url text
+ *          );
+ *
  *      - database connection will be handled and closed by another class
  *      - assumes database is set to auto commit
  *      - if all weblinks are marked as visited, or database is empty, the crawler will go to the page passed to
  *        processPage
+ *      - assumes the blacklist already has some urls in it
+ *          - initially filled with websites from Shalla list http://www.shallalist.de/
  *
  */
 public class Spider {
@@ -57,6 +75,7 @@ public class Spider {
     private static final int MAX_PAGES_TO_SEARCH = 10;
     private static final int DELAY_TO_REQUEST = 1000;
     private static final int NUMBER_OF_LINKS_PER_DOMAIN = 5;
+
     private static final Pattern FILTER1 = Pattern.compile(".*(\\.(css|gif|jpg|js|png|mp3|mp4|zip|rss_1|pdf))$");
     private static final Pattern FILTER2 = Pattern.compile("^http[s]*");
 
@@ -72,6 +91,7 @@ public class Spider {
         String currentURL = "";
 
         SpiderLeg leg = new SpiderLeg();
+        Cleaner cleaner = new Cleaner();
 
         currentURL = getUnvisitedStartingURL(url);
 
@@ -110,13 +130,14 @@ public class Spider {
 
             newPageSql = newPageSql.stream().filter(moreThanMaxDomainNamesStream())
                     .filter(moreThanMaxDomainNamesInDB())
-                    .filter(isURLHTTP().and(doesNotContainNonHTMLTypePredicate()))
+                    .filter(isURLHTTPPredicate().and(doesNotContainNonHTMLTypePredicate()))
+                    .filter(cleaner.checkIfCleanPredicate())
                     .collect(Collectors.toList());
 
             db.truncateTable("streamcheck");
 
             _totalLinks += newPageSql.size();
-            System.out.println("comitting " + newPageSql.size() + " links to db");
+            System.out.println("From url: " + currentURL + " :: Committing " + newPageSql.size() + " links to db");
 
             newPageSql.stream().forEach(s -> {
                 try {
@@ -139,7 +160,9 @@ public class Spider {
             currentURL = nextURL();
         }
 
-        System.out.println("Collected and stored " + _totalLinks + " web links in this crawl session");
+        System.out.println("Collected and stored " + _totalLinks + " web links in this crawl session.  Cleaning up DB...");
+        cleaner.clean();
+
     }
 
 
@@ -204,7 +227,8 @@ public class Spider {
 
                 if (resultSet.next()) {
                     String url = resultSet.getString("url");
-                    if (!resultSet.getBoolean("visited") && !onBlacklist(url) && !containsNonHTMLType(url)) {
+                    if (!resultSet.getBoolean("visited") && !onBlacklist(url) && !containsNonHTMLType(url)
+                            && isURLHTTP(url)) {
                         nextURL = url;
                         statement = db.connection.prepareStatement("UPDATE record SET visited=TRUE WHERE url=?");
                         statement.setString(1, nextURL);
@@ -263,16 +287,17 @@ public class Spider {
             ResultSet resultSet = statement.executeQuery();
 
             if(resultSet.next()){
-                System.out.println(url + "::Blacklisted");
+                System.out.println(url + " :: Blacklisted");
                 return true;
             }
 
 
-        } catch (Exception e ){
-            System.err.println("Couldn't decide if url is on blacklist.  " +
-                    "Could be either a url format problem or was unable to query" +
-                    " database.");
-            e.printStackTrace();
+        } catch (URISyntaxException e ){
+            System.err.println("Error in URI string.  Can't determine if URL is in blacklist.  Ignoring URL");
+            return true;
+        } catch (SQLException e){
+            System.err.println("Couldn't query database");
+            System.err.println(e.getMessage() + "\nCause:: " + e.getCause());
             return true;
         }
 
@@ -290,6 +315,18 @@ public class Spider {
     }
 
 
+    private static boolean isURLHTTP(String url){
+            Matcher matcher = FILTER2.matcher(url);
+            if(matcher.find()){
+//                System.out.println("Url has http start");
+                return true;
+            } else {
+                return false;
+            }
+    }
+
+
+
     private static Predicate<String> doesNotContainNonHTMLTypePredicate(){
         return p -> {
             Matcher matcher = FILTER1.matcher(p);
@@ -303,7 +340,7 @@ public class Spider {
     }
 
 
-    private static Predicate<String> isURLHTTP(){
+    private static Predicate<String> isURLHTTPPredicate(){
         return p -> {
             Matcher matcher = FILTER2.matcher(p);
             if(matcher.find()){
@@ -338,8 +375,12 @@ public class Spider {
                     }
                 }
 
-            } catch (Exception e){
-                e.printStackTrace();
+            } catch (URISyntaxException e){
+//                System.err.println("Error in url passed to URI - " +  e.getReason());
+                return false;
+            } catch (SQLException e){
+                System.err.println("Failed to query database for number of domains in stream");
+                return false;
             }
             return true;
         };
@@ -368,8 +409,12 @@ public class Spider {
                     }
                 }
 
-            } catch (Exception e){
-                e.printStackTrace();
+            } catch (URISyntaxException e){
+//                System.err.println("Error in url passed to URI - " +  e.getReason());
+                return false;
+            } catch (SQLException e){
+                System.err.println("Failed to query database for number of domains in stream");
+                return false;
             }
             return true;
         };

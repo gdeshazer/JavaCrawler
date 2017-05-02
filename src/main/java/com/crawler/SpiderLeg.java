@@ -14,6 +14,9 @@ import java.util.stream.Collectors;
 
 /**
  * Created by grantdeshazer on 4/29/17.
+ *
+ * Retrieves HTLM page, parses the page for links, and stores the links for filtering.
+ *
  */
 public class SpiderLeg {
 
@@ -29,8 +32,11 @@ public class SpiderLeg {
             htmlDocument = connection.get();
 
             if(connection.response().statusCode() == 200){
-                System.out.println("Retrieved web page at " + url);
+//                System.out.println("Retrieved web page at " + url);
 
+            } else if (connection.response().statusCode() != 200){
+                System.err.println("Failed to retrieve page.  HTTP error: " + connection.response().statusCode());
+                return false;
             }
 
             if(!connection.response().contentType().contains("text/html")){
@@ -40,7 +46,7 @@ public class SpiderLeg {
 
 
             Elements linksOnPage = htmlDocument.select("a[href");
-            System.out.println("Found: " + linksOnPage.size() + " links");
+//            System.out.println("Found: " + linksOnPage.size() + " links");
 
             for(Element link : linksOnPage){
                 this.links.add(link.absUrl("href"));
