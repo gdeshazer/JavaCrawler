@@ -55,8 +55,8 @@ public class Spider {
     private static int _visitedPages;
     private static int _totalLinks = 0;
     private static final int MAX_PAGES_TO_SEARCH = 10;
-    private static final int DELAY_TO_REQUEST = 500;
-    private static final int NUMBER_OF_LINKS_PER_DOMAIN = 1;
+    private static final int DELAY_TO_REQUEST = 1000;
+    private static final int NUMBER_OF_LINKS_PER_DOMAIN = 5;
     private static final Pattern FILTER1 = Pattern.compile(".*(\\.(css|gif|jpg|js|png|mp3|mp4|zip|rss_1|pdf))$");
     private static final Pattern FILTER2 = Pattern.compile("^http[s]*");
 
@@ -70,36 +70,10 @@ public class Spider {
     public static void processPage(String url) throws SQLException, IOException{
         String sql = "";
         String currentURL = "";
-        PreparedStatement statement;
-        boolean newStart = false;
 
         SpiderLeg leg = new SpiderLeg();
 
-        statement = db.connection.prepareStatement("select url from record where url=?");
-        statement.setString(1,url);
-        ResultSet urlAlreadyInDB = statement.executeQuery();
-
-
-        if(urlAlreadyInDB.next() ){
-            if (urlAlreadyInDB.getString("url").contains(url)){
-                currentURL = nextURL();
-            } else {
-                currentURL = url;
-                statement = db.connection.prepareStatement("insert into record (url,visited) values (?, true)");
-                statement.setString(1, url);
-                statement.execute();
-                _visitedPages++;
-            }
-        } else if (!db.connection.prepareStatement("select * from record").executeQuery().next()) {
-            currentURL = url;
-            statement = db.connection.prepareStatement("insert into record (url,visited) values (?, true)");
-            statement.setString(1, url);
-            statement.execute();
-            _visitedPages++;
-        } else {
-            currentURL = nextURL();
-        }
-
+        currentURL = getUnvisitedStartingURL(url);
 
         while(_visitedPages <= MAX_PAGES_TO_SEARCH) {
 
@@ -124,9 +98,22 @@ public class Spider {
                 }).collect(Collectors.toList());
             }
 
-            newPageSql = newPageSql.stream().filter(moreThanMaxDomainNames())
+            newPageSql.forEach(s -> {
+                try {
+                    PreparedStatement statement1 = db.connection.prepareStatement("insert into streamcheck (url) values (?);");
+                    statement1.setString(1, s);
+                    statement1.execute();
+                } catch (Exception e){
+                    e.printStackTrace();
+                }
+            });
+
+            newPageSql = newPageSql.stream().filter(moreThanMaxDomainNamesStream())
+                    .filter(moreThanMaxDomainNamesInDB())
                     .filter(isURLHTTP().and(doesNotContainNonHTMLTypePredicate()))
                     .collect(Collectors.toList());
+
+            db.truncateTable("streamcheck");
 
             _totalLinks += newPageSql.size();
             System.out.println("comitting " + newPageSql.size() + " links to db");
@@ -156,7 +143,38 @@ public class Spider {
     }
 
 
-    public static String nextURL(){
+    private static String getUnvisitedStartingURL(String url) throws SQLException {
+        PreparedStatement statement;
+        String currentURL;
+        statement = db.connection.prepareStatement("select url from record where url=?");
+        statement.setString(1,url);
+        ResultSet urlAlreadyInDB = statement.executeQuery();
+
+
+        if(urlAlreadyInDB.next() ){
+            if (urlAlreadyInDB.getString("url").contains(url)){
+                currentURL = nextURL();
+            } else {
+                currentURL = url;
+                statement = db.connection.prepareStatement("insert into record (url,visited) values (?, true)");
+                statement.setString(1, url);
+                statement.execute();
+                _visitedPages++;
+            }
+        } else if (!db.connection.prepareStatement("select * from record").executeQuery().next()) {
+            currentURL = url;
+            statement = db.connection.prepareStatement("insert into record (url,visited) values (?, true)");
+            statement.setString(1, url);
+            statement.execute();
+            _visitedPages++;
+        } else {
+            currentURL = nextURL();
+        }
+        return currentURL;
+    }
+
+
+    private static String nextURL(){
         String nextURL = "";
 
         PreparedStatement statement;
@@ -207,6 +225,29 @@ public class Spider {
         }
 
         return nextURL;
+    }
+
+
+    private static ResultSet getUnvisited() throws SQLException {
+        return db.queryDB("select * from record where visited=false;");
+    }
+
+
+    private static ResultSet getVisited() throws SQLException {
+        return db.queryDB("select * from record where visited=TRUE;");
+    }
+
+
+    private static int getMax(String collumn) throws SQLException{
+        String sql = "select max(" + collumn + ") from record";
+        ResultSet resultSet = db.queryDB(sql);
+
+        if(resultSet.next()){
+            return resultSet.getInt("max");
+        } else {
+            return 1;
+        }
+
     }
 
 
@@ -274,30 +315,8 @@ public class Spider {
         };
     }
 
-    private static ResultSet getUnvisited() throws SQLException {
-        return db.queryDB("select * from record where visited=false;");
-    }
 
-
-    private static ResultSet getVisited() throws SQLException {
-        return db.queryDB("select * from record where visited=TRUE;");
-    }
-
-
-    private static int getMax(String collumn) throws SQLException{
-        String sql = "select max(" + collumn + ") from record";
-        ResultSet resultSet = db.queryDB(sql);
-
-        if(resultSet.next()){
-            return resultSet.getInt("max");
-        } else {
-            return 1;
-        }
-
-    }
-
-
-    private static Predicate<String> moreThanMaxDomainNames(){
+    private static Predicate<String> moreThanMaxDomainNamesInDB(){
         return p -> {
             try {
                 URI uri = new URI(p);
@@ -326,8 +345,34 @@ public class Spider {
         };
     }
 
-    private static String formatURL(String url){
-        return "'" + url + "'";
+
+    private static Predicate<String> moreThanMaxDomainNamesStream(){
+        return p -> {
+            try {
+                URI uri = new URI(p);
+                String domain = uri.getHost();
+                PreparedStatement statement = db.connection.prepareStatement("select count(url) from streamcheck where url like ? or url=?;");
+                statement.setString(1, "%"+ domain + "%");
+                statement.setString(2, p);
+//                System.out.println("Executing query: " + statement.toString());
+                ResultSet resultSet = statement.executeQuery();
+
+                if(resultSet.next()){
+//                  int temp = resultSet.getInt("count");
+                    if(resultSet.getInt("count") >= NUMBER_OF_LINKS_PER_DOMAIN) {
+//                      System.out.println("More than " + NUMBER_OF_LINKS_PER_DOMAIN + " for the domain " + domain);
+//                        System.out.println("return false for " + p);
+                        return false;
+                    } else {
+                        return true;
+                    }
+                }
+
+            } catch (Exception e){
+                e.printStackTrace();
+            }
+            return true;
+        };
     }
 
 }

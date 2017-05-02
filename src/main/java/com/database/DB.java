@@ -50,13 +50,28 @@ public class DB {
         return _statement.execute();
     }
 
-    public boolean runSql2(String sql) throws  SQLException{
+    public boolean executeStatement(String sql) throws  SQLException{
         return connection.prepareStatement(sql).execute();
     }
 
     public void update(String sql) throws SQLException{
         _statement = connection.prepareStatement(sql);
         _statement.executeUpdate();
+    }
+
+    public void truncateTable(String table) {
+        try {
+            if(table.contains("streamcheck")) {
+                connection.prepareStatement("TRUNCATE streamcheck RESTART IDENTITY ").execute();
+            } else if (table.contains("record")){
+                connection.prepareStatement("TRUNCATE record RESTART IDENTITY ").execute();
+            } else {
+                System.out.println("Invalid table to truncate :: " + table + " doesn't exist");
+            }
+        } catch (Exception e){
+            e.printStackTrace();
+            System.err.println("Failed to truncate table " + table);
+        }
     }
 
     @Override
