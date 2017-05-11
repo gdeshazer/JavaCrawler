@@ -31,6 +31,7 @@ public class SpiderLeg {
             Connection connection = Jsoup.connect(url).userAgent(USER_AGENT);
             htmlDocument = connection.get();
 
+
             if(connection.response().statusCode() == 200){
 //                System.out.println("Retrieved web page at " + url);
 
