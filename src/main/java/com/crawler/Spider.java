@@ -22,6 +22,7 @@ import java.util.stream.Collectors;
  * TODO: Add robot.txt compliance
  * TODO: Add front end interface
  * TODO: Add a logfile generator to collect visited sites and running parameters from a crawl
+ * TODO: Add asynchronous
  *
  * Basic Crawler/spider
  *    Crawler stores all of its links both visited and unvisited into a postgres database
@@ -73,7 +74,7 @@ public class Spider {
     private static int _visitedPages;
     private static int _totalLinks = 0;
 
-    private static final int MAX_PAGES_TO_SEARCH = 10;
+    private static final int MAX_PAGES_TO_SEARCH = 15;
     private static final int DELAY_TO_REQUEST = 1000;
     private static final int NUMBER_OF_LINKS_PER_DOMAIN = 5;
 

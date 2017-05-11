@@ -28,8 +28,9 @@ import java.util.regex.Pattern;
 public class Cleaner {
 
     private static DB db = new DB();
+    private int _caughtLinks = 0;
 
-    private static final Pattern MATURE_FILTER = Pattern.compile("(sex|porn|nsfw|sfw|mature|deactivated)");
+    private static final Pattern MATURE_FILTER = Pattern.compile("(sex|nsfw|gif|jpg)");
 
 
     public static void main(String[] args){
@@ -59,6 +60,7 @@ public class Cleaner {
                     statement = db.connection.prepareStatement("INSERT INTO blacklist (url) VALUES (?)");
                     statement.setString(1, url);
                     statement.execute();
+                    _caughtLinks++;
                 } else {
 //                    System.out.println("Url: " + url + " appears to be clean.");
                 }
