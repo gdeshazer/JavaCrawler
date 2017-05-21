@@ -22,7 +22,7 @@ import java.util.stream.Collectors;
  * TODO: Add robot.txt compliance
  * TODO: Add front end interface
  * TODO: Add a logfile generator to collect visited sites and running parameters from a crawl
- * TODO: Add asynchronous
+ * TODO: Implement asynchronous HTTP calls
  *
  * Basic Crawler/spider
  *    Crawler stores all of its links both visited and unvisited into a postgres database
@@ -81,6 +81,7 @@ public class Spider {
     private static final Pattern FILTER1 = Pattern.compile(".*(\\.(css|gif|jpg|js|png|mp3|mp4|zip|rss_1|pdf))$");
     private static final Pattern FILTER2 = Pattern.compile("^http[s]*");
 
+    private static List<String> streamCheck;
 
     public static void main (String[] args) throws SQLException, IOException{
         processPage("http://www.mines.edu");
@@ -120,15 +121,17 @@ public class Spider {
                 }).collect(Collectors.toList());
             }
 
-            newPageSql.forEach(s -> {
-                try {
-                    PreparedStatement statement1 = db.connection.prepareStatement("insert into streamcheck (url) values (?);");
-                    statement1.setString(1, s);
-                    statement1.execute();
-                } catch (Exception e){
-                    e.printStackTrace();
-                }
-            });
+            streamCheck.addAll(newPageSql);
+
+//            newPageSql.forEach(s -> {
+//                try {
+//                    PreparedStatement statement1 = db.connection.prepareStatement("insert into streamcheck (url) values (?);");
+//                    statement1.setString(1, s);
+//                    statement1.execute();
+//                } catch (Exception e){
+//                    e.printStackTrace();
+//                }
+//            });
 
             newPageSql = newPageSql.stream().filter(moreThanMaxDomainNamesStream())
                     .filter(moreThanMaxDomainNamesInDB())
@@ -391,34 +394,32 @@ public class Spider {
 
     private static Predicate<String> moreThanMaxDomainNamesStream(){
         return p -> {
+            int count = 0;
+
             try {
                 URI uri = new URI(p);
                 String domain = uri.getHost();
-                PreparedStatement statement = db.connection.prepareStatement("select count(url) from streamcheck where url like ? or url=?;");
-                statement.setString(1, "%"+ domain + "%");
-                statement.setString(2, p);
-//                System.out.println("Executing query: " + statement.toString());
-                ResultSet resultSet = statement.executeQuery();
 
-                if(resultSet.next()){
-//                  int temp = resultSet.getInt("count");
-                    if(resultSet.getInt("count") >= NUMBER_OF_LINKS_PER_DOMAIN) {
-//                      System.out.println("More than " + NUMBER_OF_LINKS_PER_DOMAIN + " for the domain " + domain);
-//                        System.out.println("return false for " + p);
-                        return false;
-                    } else {
-                        return true;
+                Pattern pattern = Pattern.compile(".*" + domain + ".*");
+
+                for(String s : streamCheck) {
+                    Matcher matcher = pattern.matcher(s);
+
+                    if(matcher.find()){
+                        count++;
                     }
                 }
 
+                if(count >= NUMBER_OF_LINKS_PER_DOMAIN){
+                    return false;
+                } else {
+                    return true;
+                }
+
             } catch (URISyntaxException e){
-//                System.err.println("Error in url passed to URI - " +  e.getReason());
-                return false;
-            } catch (SQLException e){
-                System.err.println("Failed to query database for number of domains in stream");
+                System.err.println("Error in url passed to URI :: " + e.getReason());
                 return false;
             }
-            return true;
         };
     }
 
