@@ -27,7 +27,7 @@ import java.util.regex.Pattern;
  */
 public class Cleaner {
 
-    private static DB db = new DB();
+    private static DB db;
     private int _caughtLinks = 0;
 
     private static final Pattern MATURE_FILTER = Pattern.compile("(sex|nsfw|gif|jpg)");
@@ -36,6 +36,14 @@ public class Cleaner {
     public static void main(String[] args){
         Cleaner cleaner = new Cleaner();
         cleaner.clean();
+    }
+
+    public Cleaner(){
+        db = new DB();
+    }
+
+    public Cleaner(DB dataB){
+        db = dataB;
     }
 
 
@@ -70,6 +78,27 @@ public class Cleaner {
             System.err.println("Problem with sql");
             e.printStackTrace();
         }
+
+        try {
+            PreparedStatement statement = db.connection.prepareStatement("SELECT count(url) FROM record;");
+            ResultSet URLcount = statement.executeQuery();
+
+            statement = db.connection.prepareStatement("SELECT max(recordid) FROM record;");
+            ResultSet maxRecordID = statement.executeQuery();
+
+            if(URLcount.next() && maxRecordID.next()){
+                if(URLcount.getInt("count") == maxRecordID.getInt("max")){
+                    System.out.println("Found difference between sequence max and number of rows.  Resetting sequence.");
+                    this.resetSequence();
+                }
+            }
+
+        } catch (SQLException e){
+            System.err.println("Couldn't reset sequence");
+            e.printStackTrace();
+        }
+
+        System.out.println("Found, deleted, and blacklisted " + _caughtLinks + " links.");
     }
 
 
@@ -100,7 +129,7 @@ public class Cleaner {
     }
 
 
-    public void deleteFromDB(String url){
+    private void deleteFromDB(String url){
         PreparedStatement statement;
 
         try {
@@ -121,7 +150,7 @@ public class Cleaner {
     }
 
 
-    public void addToBlacklist(String url){
+    private void addToBlacklist(String url){
         PreparedStatement statement;
 
         try {
@@ -140,6 +169,22 @@ public class Cleaner {
         } catch (SQLException e){
             System.err.println("Failed to query database");
             e.printStackTrace();
+        }
+    }
+
+    private void resetSequence(){
+        try {
+
+            PreparedStatement statement1 = db.connection.prepareStatement("UPDATE record set recordid = DEFAULT;");
+            PreparedStatement statement2 = db.connection.prepareStatement("ALTER SEQUENCE record_recordid_seq RESTART WITH 1;");
+
+            if(statement1.execute()){
+                statement2.execute();
+                statement1.execute();
+            }
+
+        } catch (SQLException e){
+            System.err.println("Failed to reset sequences");
         }
     }
 }
