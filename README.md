@@ -23,10 +23,6 @@ Create the following three tables in the crawler database:
         url text
     );
 
-    CREATE TABLE streamCheck (
-        id SERIAL PRIMARY KEY,
-        url text
-    );
 ```
 
 Download the repository and in the DB class change the constructor to match
@@ -44,5 +40,5 @@ domain.
 # Future Updates
 
 * Implement parsing of robot.txt files
+* Log file recording of crawler performance
 * Implement a user interface
-* Implement max capacity on number of urls in database
