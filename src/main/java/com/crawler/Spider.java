@@ -55,11 +55,6 @@ import java.util.stream.Collectors;
  *              url text
  *          );
  *
- *          create table streamCheck (
- *              id serial primary key,
- *              url text
- *          );
- *
  *      - database connection will be handled and closed by another class
  *      - assumes database is set to auto commit
  *      - if all weblinks are marked as visited, or database is empty, the crawler will go to the page passed to
@@ -70,6 +65,7 @@ import java.util.stream.Collectors;
  */
 public class Spider {
     public static final DB db = new DB();
+    private static Cleaner _cleaner;
 
     private static int _visitedPages;
     private static int _totalLinks = 0;
@@ -81,11 +77,16 @@ public class Spider {
     private static final Pattern FILTER1 = Pattern.compile(".*(\\.(css|gif|jpg|js|png|mp3|mp4|zip|rss_1|pdf))$");
     private static final Pattern FILTER2 = Pattern.compile("^http[s]*");
 
-    private static List<String> streamCheck;
+    private static List<String> _streamCheck;
+
 
     public static void main (String[] args) throws SQLException, IOException{
+        _cleaner = new Cleaner(db);
+
         processPage("http://www.mines.edu");
 //        processPage("http://amazon.com/");
+
+        _cleaner.clean();
     }
 
 
@@ -94,7 +95,6 @@ public class Spider {
         String currentURL = "";
 
         SpiderLeg leg = new SpiderLeg();
-        Cleaner cleaner = new Cleaner();
 
         currentURL = getUnvisitedStartingURL(url);
 
@@ -121,25 +121,13 @@ public class Spider {
                 }).collect(Collectors.toList());
             }
 
-            streamCheck.addAll(newPageSql);
-
-//            newPageSql.forEach(s -> {
-//                try {
-//                    PreparedStatement statement1 = db.connection.prepareStatement("insert into streamcheck (url) values (?);");
-//                    statement1.setString(1, s);
-//                    statement1.execute();
-//                } catch (Exception e){
-//                    e.printStackTrace();
-//                }
-//            });
+            _streamCheck = newPageSql;
 
             newPageSql = newPageSql.stream().filter(moreThanMaxDomainNamesStream())
                     .filter(moreThanMaxDomainNamesInDB())
                     .filter(isURLHTTPPredicate().and(doesNotContainNonHTMLTypePredicate()))
-                    .filter(cleaner.checkIfCleanPredicate())
+                    .filter(_cleaner.checkIfCleanPredicate())
                     .collect(Collectors.toList());
-
-            db.truncateTable("streamcheck");
 
             _totalLinks += newPageSql.size();
             System.out.println("From url: " + currentURL + " :: Committing " + newPageSql.size() + " links to db");
@@ -166,7 +154,6 @@ public class Spider {
         }
 
         System.out.println("Collected and stored " + _totalLinks + " web links in this crawl session.  Cleaning up DB...");
-        cleaner.clean();
 
     }
 
@@ -292,7 +279,7 @@ public class Spider {
             ResultSet resultSet = statement.executeQuery();
 
             if(resultSet.next()){
-                System.out.println(url + " :: Blacklisted");
+                System.out.println("Blacklisted :: " + url);
                 return true;
             }
 
@@ -402,7 +389,7 @@ public class Spider {
 
                 Pattern pattern = Pattern.compile(".*" + domain + ".*");
 
-                for(String s : streamCheck) {
+                for(String s : _streamCheck) {
                     Matcher matcher = pattern.matcher(s);
 
                     if(matcher.find()){
@@ -417,7 +404,7 @@ public class Spider {
                 }
 
             } catch (URISyntaxException e){
-                System.err.println("Error in url passed to URI :: " + e.getReason());
+                System.err.println("Error in url passed to URI :: " + e.getReason() + "\nURL ::\" " + p + "\"\n");
                 return false;
             }
         };
