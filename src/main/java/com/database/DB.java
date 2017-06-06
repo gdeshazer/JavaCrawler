@@ -83,10 +83,9 @@ public class DB {
             statement.setString(2, domain);
             statement.execute();
 
-//            System.out.println("Blacklisting:: " + url);
 
         } catch (URISyntaxException e){
-//            System.err.println("Incorrect URI format - can't add domain to blacklist");
+            System.err.println("Incorrect URI format - can't add domain to blacklist");
         } catch (SQLException e){
             System.err.println("Failed to query database");
             e.printStackTrace();

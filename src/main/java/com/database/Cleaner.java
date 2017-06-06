@@ -1,7 +1,5 @@
 package com.database;
 
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -31,7 +29,6 @@ public class Cleaner {
     private int _caughtLinks = 0;
 
     private static final Pattern MATURE_FILTER = Pattern.compile("(sex|nsfw|gif|jpg)");
-
 
     public static void main(String[] args){
         Cleaner cleaner = new Cleaner();
@@ -69,9 +66,8 @@ public class Cleaner {
                     statement.setString(1, url);
                     statement.execute();
                     _caughtLinks++;
-                } else {
-//                    System.out.println("Url: " + url + " appears to be clean.");
                 }
+
             }
 
         } catch (SQLException e){
