@@ -9,7 +9,7 @@ they've been visited or not between crawling sessions.
 Start your own PostgreSQL server in any directory and open a new database
 with the command `psql crawler`.
 
-Create the following three tables in the crawler database:
+Create the following tables in the crawler database:
 
 ```
     CREATE TABLE record (

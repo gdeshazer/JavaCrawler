@@ -89,7 +89,7 @@ public class Cleaner {
             if(URLcount.next() && maxRecordID.next()){
                 if(URLcount.getInt("count") == maxRecordID.getInt("max")){
                     System.out.println("Found difference between sequence max and number of rows.  Resetting sequence.");
-                    this.resetSequence();
+                    db.resetSequence();
                 }
             }
 
@@ -106,8 +106,8 @@ public class Cleaner {
       Matcher m = MATURE_FILTER.matcher(url);
 
       if(m.find()){
-          deleteFromDB(url);
-          addToBlacklist(url);
+          db.deleteFromDB(url);
+          db.addToBlacklist(url);
           return false;
       }
 
@@ -119,8 +119,8 @@ public class Cleaner {
         return p -> {
             Matcher m = MATURE_FILTER.matcher(p);
             if(m.find()){
-                deleteFromDB(p);
-                addToBlacklist(p);
+                db.deleteFromDB(p);
+                db.addToBlacklist(p);
                 return false;
             } else {
                 return true;
@@ -128,63 +128,4 @@ public class Cleaner {
         };
     }
 
-
-    private void deleteFromDB(String url){
-        PreparedStatement statement;
-
-        try {
-            statement = db.connection.prepareStatement("SELECT recordid, url FROM record WHERE url=?");
-            statement.setString(1, url);
-            ResultSet urlFromDB = statement.executeQuery();
-
-            if(urlFromDB.next()){
-                statement = db.connection.prepareStatement("DELETE FROM record WHERE recordid=?");
-                statement.setInt(1, urlFromDB.getInt("recordid"));
-                statement.execute();
-            }
-
-        } catch (SQLException e){
-            System.err.println("Failed to query database");
-            e.printStackTrace();
-        }
-    }
-
-
-    private void addToBlacklist(String url){
-        PreparedStatement statement;
-
-        try {
-            URI uri = new URI(url);
-            String domain = uri.getHost();
-
-            statement = db.connection.prepareStatement("INSERT INTO blacklist (url) VALUES (?), (?)");
-            statement.setString(1, url);
-            statement.setString(2, domain);
-            statement.execute();
-
-//            System.out.println("Blacklisting:: " + url);
-
-        } catch (URISyntaxException e){
-//            System.err.println("Incorrect URI format - can't add domain to blacklist");
-        } catch (SQLException e){
-            System.err.println("Failed to query database");
-            e.printStackTrace();
-        }
-    }
-
-    private void resetSequence(){
-        try {
-
-            PreparedStatement statement1 = db.connection.prepareStatement("UPDATE record set recordid = DEFAULT;");
-            PreparedStatement statement2 = db.connection.prepareStatement("ALTER SEQUENCE record_recordid_seq RESTART WITH 1;");
-
-            if(statement1.execute()){
-                statement2.execute();
-                statement1.execute();
-            }
-
-        } catch (SQLException e){
-            System.err.println("Failed to reset sequences");
-        }
-    }
 }

@@ -19,10 +19,11 @@ import java.util.stream.Collectors;
 /**
  * Created by grantdeshazer on 4/29/17.
  *
- * TODO: Add robot.txt compliance
- * TODO: Add front end interface
- * TODO: Add a logfile generator to collect visited sites and running parameters from a crawl
+ * TODO: Add Junit tests
  * TODO: Implement asynchronous HTTP calls
+ * TODO: Add a logfile generator to collect visited sites and running parameters from a crawl
+ * TODO: Add front end interface
+ * TODO: Add robot.txt compliance
  *
  * Basic Crawler/spider
  *    Crawler stores all of its links both visited and unvisited into a postgres database
@@ -64,33 +65,44 @@ import java.util.stream.Collectors;
  *
  */
 public class Spider {
-    public static final DB db = new DB();
-    private static Cleaner _cleaner;
+    public final DB db;
+    public Cleaner _cleaner;
 
-    private static int _visitedPages;
-    private static int _totalLinks = 0;
+    private int _visitedPages;
+    private int _totalLinks = 0;
 
-    private static final int MAX_PAGES_TO_SEARCH = 15;
-    private static final int DELAY_TO_REQUEST = 1000;
-    private static final int NUMBER_OF_LINKS_PER_DOMAIN = 5;
+    private final int MAX_PAGES_TO_SEARCH = 15;
+    private final int DELAY_TO_REQUEST = 1000;
+    private final int NUMBER_OF_LINKS_PER_DOMAIN = 5;
 
-    private static final Pattern FILTER1 = Pattern.compile(".*(\\.(css|gif|jpg|js|png|mp3|mp4|zip|rss_1|pdf))$");
-    private static final Pattern FILTER2 = Pattern.compile("^http[s]*");
+    private final Pattern FILTER1 = Pattern.compile(".*(\\.(css|gif|jpg|js|png|mp3|mp4|zip|rss_1|pdf))$");
+    private final Pattern FILTER2 = Pattern.compile("^http[s]*");
 
-    private static List<String> _streamCheck;
+    private List<String> _streamCheck;
 
 
     public static void main (String[] args) throws SQLException, IOException{
-        _cleaner = new Cleaner(db);
+        Spider spider = new Spider();
 
-        processPage("http://www.mines.edu");
+        spider.processPage("http://www.mines.edu");
 //        processPage("http://amazon.com/");
 
-        _cleaner.clean();
+        spider._cleaner.clean();
     }
 
 
-    public static void processPage(String url) throws SQLException, IOException{
+    public Spider(){
+        db = new DB();
+        _cleaner = new Cleaner(db);
+    }
+
+    public Spider(String database){
+        db = new DB(database);
+        _cleaner = new Cleaner(db);
+    }
+
+
+    public void processPage(String url) throws SQLException, IOException{
         String sql = "";
         String currentURL = "";
 
@@ -158,7 +170,7 @@ public class Spider {
     }
 
 
-    private static String getUnvisitedStartingURL(String url) throws SQLException {
+    private String getUnvisitedStartingURL(String url) throws SQLException {
         PreparedStatement statement;
         String currentURL;
         statement = db.connection.prepareStatement("select url from record where url=?");
@@ -189,7 +201,7 @@ public class Spider {
     }
 
 
-    private static String nextURL(){
+    private String nextURL(){
         String nextURL = "";
 
         PreparedStatement statement;
@@ -244,17 +256,17 @@ public class Spider {
     }
 
 
-    private static ResultSet getUnvisited() throws SQLException {
+    private ResultSet getUnvisited() throws SQLException {
         return db.queryDB("select * from record where visited=false;");
     }
 
 
-    private static ResultSet getVisited() throws SQLException {
+    private ResultSet getVisited() throws SQLException {
         return db.queryDB("select * from record where visited=TRUE;");
     }
 
 
-    private static int getMax(String collumn) throws SQLException{
+    private int getMax(String collumn) throws SQLException{
         String sql = "select max(" + collumn + ") from record";
         ResultSet resultSet = db.queryDB(sql);
 
@@ -267,7 +279,7 @@ public class Spider {
     }
 
 
-    private static boolean onBlacklist(String url){
+    private boolean onBlacklist(String url){
         try{
             URI uri = new URI(url);
             String domain = uri.getHost();
@@ -297,7 +309,7 @@ public class Spider {
     }
 
 
-    private static boolean containsNonHTMLType(String url){
+    private boolean containsNonHTMLType(String url){
         Matcher matcher = FILTER1.matcher(url);
         if (matcher.find()) {
 //            System.out.println(url + " contains non-HTML type");
@@ -307,7 +319,7 @@ public class Spider {
     }
 
 
-    private static boolean isURLHTTP(String url){
+    private boolean isURLHTTP(String url){
             Matcher matcher = FILTER2.matcher(url);
             if(matcher.find()){
 //                System.out.println("Url has http start");
@@ -319,7 +331,7 @@ public class Spider {
 
 
 
-    private static Predicate<String> doesNotContainNonHTMLTypePredicate(){
+    private Predicate<String> doesNotContainNonHTMLTypePredicate(){
         return p -> {
             Matcher matcher = FILTER1.matcher(p);
             if (matcher.find()) {
@@ -332,7 +344,7 @@ public class Spider {
     }
 
 
-    private static Predicate<String> isURLHTTPPredicate(){
+    private Predicate<String> isURLHTTPPredicate(){
         return p -> {
             Matcher matcher = FILTER2.matcher(p);
             if(matcher.find()){
@@ -345,7 +357,7 @@ public class Spider {
     }
 
 
-    private static Predicate<String> moreThanMaxDomainNamesInDB(){
+    private Predicate<String> moreThanMaxDomainNamesInDB(){
         return p -> {
             try {
                 URI uri = new URI(p);
@@ -379,7 +391,7 @@ public class Spider {
     }
 
 
-    private static Predicate<String> moreThanMaxDomainNamesStream(){
+    private Predicate<String> moreThanMaxDomainNamesStream(){
         return p -> {
             int count = 0;
 
