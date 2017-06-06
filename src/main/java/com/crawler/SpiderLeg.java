@@ -33,7 +33,6 @@ public class SpiderLeg {
 
 
             if(connection.response().statusCode() == 200){
-//                System.out.println("Retrieved web page at " + url);
 
             } else if (connection.response().statusCode() != 200){
                 System.err.println("Failed to retrieve page.  HTTP error: " + connection.response().statusCode());
@@ -47,7 +46,6 @@ public class SpiderLeg {
 
 
             Elements linksOnPage = htmlDocument.select("a[href");
-//            System.out.println("Found: " + linksOnPage.size() + " links");
 
             for(Element link : linksOnPage){
                 this.links.add(link.absUrl("href"));

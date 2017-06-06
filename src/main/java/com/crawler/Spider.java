@@ -9,7 +9,10 @@ import java.net.URISyntaxException;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -85,7 +88,6 @@ public class Spider {
         Spider spider = new Spider();
 
         spider.processPage("http://www.mines.edu");
-//        processPage("http://amazon.com/");
 
         spider._cleaner.clean();
     }
@@ -115,23 +117,16 @@ public class Spider {
             leg.crawl(currentURL);
 
             List<String> newPageSql  = leg.getPages();
-            ResultSet capturedURLS = db.connection.createStatement().executeQuery("select url from record");
 
-            while(capturedURLS.next()) {
-                newPageSql = newPageSql.stream().filter(s -> {
-                    try {
-                        String str = capturedURLS.getString("url");
-                        if(str.contains(s)){
-                            return false;
-                        } else {
-                            return true;
-                        }
-                    } catch (Exception e){
-                        System.err.println("Couldn't get url from visited pages");
-                    }
-                    return true;
-                }).collect(Collectors.toList());
+            ResultSet capturedURLSDB = db.connection.createStatement().executeQuery("select url from record;");
+            Set<String> capturedURL = new HashSet<>();
+
+            while(capturedURLSDB.next()) {
+                capturedURL.add(capturedURLSDB.getString("url"));
             }
+
+            //need to have !capturedURL.contains() otherwise the filter throws out everything except what is already in DB
+            newPageSql = newPageSql.stream().filter(s -> !capturedURL.contains(s)).collect(Collectors.toList());
 
             _streamCheck = newPageSql;
 
@@ -173,24 +168,31 @@ public class Spider {
     private String getUnvisitedStartingURL(String url) throws SQLException {
         PreparedStatement statement;
         String currentURL;
-        statement = db.connection.prepareStatement("select url from record where url=?");
+
+        statement = db.connection.prepareStatement("SELECT url FROM record WHERE url=?;");
         statement.setString(1,url);
+
         ResultSet urlAlreadyInDB = statement.executeQuery();
 
-
+        //if url is already in database
+        //  if visited get new url
+        //  else if not, mark as visited and return it as url to crawl on
+        //else if url is not in the database and database is empty
+        //  add url to database, mark as visited, and return url to crawl on
+        //else get new url
         if(urlAlreadyInDB.next() ){
             if (urlAlreadyInDB.getString("url").contains(url)){
                 currentURL = nextURL();
             } else {
                 currentURL = url;
-                statement = db.connection.prepareStatement("insert into record (url,visited) values (?, true)");
+                statement = db.connection.prepareStatement("UPDATE record SET visited=TRUE WHERE url=?;");
                 statement.setString(1, url);
                 statement.execute();
                 _visitedPages++;
             }
-        } else if (!db.connection.prepareStatement("select * from record").executeQuery().next()) {
+        } else if (!db.connection.prepareStatement("select * from record;").executeQuery().next()) {
             currentURL = url;
-            statement = db.connection.prepareStatement("insert into record (url,visited) values (?, true)");
+            statement = db.connection.prepareStatement("insert into record (url,visited) values (?, true);");
             statement.setString(1, url);
             statement.execute();
             _visitedPages++;
@@ -213,7 +215,7 @@ public class Spider {
         boolean newURL = false;
 
         try {
-            statement = db.connection.prepareStatement("SELECT count(recordid) FROM record");
+            statement = db.connection.prepareStatement("SELECT count(recordid) FROM record;");
             count = statement.executeQuery();
 
             if (count.next()) {
@@ -234,7 +236,7 @@ public class Spider {
                     if (!resultSet.getBoolean("visited") && !onBlacklist(url) && !containsNonHTMLType(url)
                             && isURLHTTP(url)) {
                         nextURL = url;
-                        statement = db.connection.prepareStatement("UPDATE record SET visited=TRUE WHERE url=?");
+                        statement = db.connection.prepareStatement("UPDATE record SET visited=TRUE WHERE url=?;");
                         statement.setString(1, nextURL);
                         statement.execute();
                         _visitedPages++;
@@ -256,34 +258,11 @@ public class Spider {
     }
 
 
-    private ResultSet getUnvisited() throws SQLException {
-        return db.queryDB("select * from record where visited=false;");
-    }
-
-
-    private ResultSet getVisited() throws SQLException {
-        return db.queryDB("select * from record where visited=TRUE;");
-    }
-
-
-    private int getMax(String collumn) throws SQLException{
-        String sql = "select max(" + collumn + ") from record";
-        ResultSet resultSet = db.queryDB(sql);
-
-        if(resultSet.next()){
-            return resultSet.getInt("max");
-        } else {
-            return 1;
-        }
-
-    }
-
-
     private boolean onBlacklist(String url){
         try{
             URI uri = new URI(url);
             String domain = uri.getHost();
-            PreparedStatement statement = db.connection.prepareStatement("select url from blacklist where url=? or url=? or url like ?");
+            PreparedStatement statement = db.connection.prepareStatement("SELECT url FROM blacklist WHERE url=? OR url=? OR url LIKE ?;");
             statement.setString(1, url);
             statement.setString(2, domain);
             statement.setString(3, "%" + domain + "%");
@@ -312,7 +291,6 @@ public class Spider {
     private boolean containsNonHTMLType(String url){
         Matcher matcher = FILTER1.matcher(url);
         if (matcher.find()) {
-//            System.out.println(url + " contains non-HTML type");
             return true;
         }
         return false;
@@ -322,7 +300,6 @@ public class Spider {
     private boolean isURLHTTP(String url){
             Matcher matcher = FILTER2.matcher(url);
             if(matcher.find()){
-//                System.out.println("Url has http start");
                 return true;
             } else {
                 return false;
@@ -335,7 +312,6 @@ public class Spider {
         return p -> {
             Matcher matcher = FILTER1.matcher(p);
             if (matcher.find()) {
-//                System.out.println(p + " contains non-HTML type");
                 return false;
             } else {
                 return true;
@@ -348,7 +324,6 @@ public class Spider {
         return p -> {
             Matcher matcher = FILTER2.matcher(p);
             if(matcher.find()){
-//                System.out.println("Url has http start");
                 return true;
             } else {
                 return false;
@@ -362,17 +337,13 @@ public class Spider {
             try {
                 URI uri = new URI(p);
                 String domain = uri.getHost();
-                PreparedStatement statement = db.connection.prepareStatement("select count(url) from record where url like ? or url=?;");
+                PreparedStatement statement = db.connection.prepareStatement("SELECT count(url) FROM record WHERE url LIKE ? OR url=?;");
                 statement.setString(1, "%"+ domain + "%");
                 statement.setString(2, p);
-//                System.out.println("Executing query: " + statement.toString());
                 ResultSet resultSet = statement.executeQuery();
 
                 if(resultSet.next()){
-//                  int temp = resultSet.getInt("count");
                     if(resultSet.getInt("count") >= NUMBER_OF_LINKS_PER_DOMAIN) {
-//                      System.out.println("More than " + NUMBER_OF_LINKS_PER_DOMAIN + " for the domain " + domain);
-//                        System.out.println("return false for " + p);
                         return false;
                     } else {
                         return true;
@@ -380,10 +351,8 @@ public class Spider {
                 }
 
             } catch (URISyntaxException e){
-//                System.err.println("Error in url passed to URI - " +  e.getReason());
                 return false;
             } catch (SQLException e){
-                System.err.println("Failed to query database for number of domains in stream");
                 return false;
             }
             return true;
