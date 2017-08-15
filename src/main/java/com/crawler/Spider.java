@@ -12,7 +12,6 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -120,25 +119,9 @@ public class Spider {
 
             List<String> newPageSql  = leg.getPages();
 
-            ResultSet capturedURLSDB = db.connection.createStatement().executeQuery("select url from record;");
-            Set<String> capturedURL = new HashSet<>();
+            Set<String> capturedURL = db.getUrls();
 
-            while(capturedURLSDB.next()) {
-                capturedURL.add(capturedURLSDB.getString("url"));
-            }
-
-            newPageSql = newPageSql.stream().filter(s -> !capturedURL.contains(s)).collect(Collectors.toList());
-
-            _streamCheck = newPageSql;
-
-            newPageSql = newPageSql.stream().filter(moreThanMaxDomainNamesStream())
-                    .filter(moreThanMaxDomainNamesInDB())
-                    .filter(isURLHTTPPredicate().and(doesNotContainNonHTMLTypePredicate()))
-                    .filter(_cleaner.checkIfCleanPredicate())
-                    .collect(Collectors.toList());
-
-            _totalLinks += newPageSql.size();
-            System.out.println("From url: " + currentURL + " :: Committing " + newPageSql.size() + " links to db");
+            newPageSql = filterUrls(currentURL, newPageSql, capturedURL);
 
             newPageSql.stream().forEach(s -> {
                 try {
@@ -163,6 +146,27 @@ public class Spider {
 
         System.out.println("Collected and stored " + _totalLinks + " web links in this crawl session.  Cleaning up DB...");
 
+    }
+
+
+    public List<String> filterUrls(String currentURL, List<String> newPageSql, Set<String> capturedURLS) {
+        // need to have !capturedURL otherwise the filter gets rid of URLS which do not exist in the DB
+        List<String> newPages = newPageSql.stream().filter(url -> !capturedURLS.contains(url)).collect(Collectors.toList());
+
+        _streamCheck = newPages;
+
+        newPages = newPages.stream()
+                .filter(moreThanMaxDomainNamesStream())
+                .filter(moreThanMaxDomainNamesInDB())
+                .filter(isURLHTTPPredicate().and(doesNotContainNonHTMLTypePredicate()))
+                .filter(_cleaner.checkIfCleanPredicate())
+                .collect(Collectors.toList());
+
+        _totalLinks += newPages.size();
+
+        System.out.println("From url: " + currentURL + " :: Committing " + newPages.size() + " links to db");
+
+        return newPages;
     }
 
 
