@@ -3,6 +3,8 @@ package com.database;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.sql.*;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Created by grantdeshazer on 4/29/17.
@@ -105,6 +107,18 @@ public class DB {
         } catch (SQLException e){
             System.err.println("Failed to reset sequences");
         }
+    }
+
+    public Set<String> getUrls() throws SQLException {
+        Set<String> urlSet = new HashSet<>();
+
+        ResultSet urls = connection.createStatement().executeQuery("select url from record;");
+
+        while (urls.next()) {
+            urlSet.add(urls.getString("url"));
+        }
+
+        return urlSet;
     }
 
     @Override

@@ -8,5 +8,9 @@ import org.junit.Test;
  */
 public class SpiderTest {
 
+    @Test
+    public void filterURLTest(){
+        //TODO: Verify URLS Filter correctly
+    }
 
 }

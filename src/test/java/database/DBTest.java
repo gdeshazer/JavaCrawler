@@ -124,4 +124,11 @@ public class DBTest {
 
     }
 
+    @Test
+    public void getUrlsTest(){
+        //TODO: Test for returned URL Accuracy
+    }
+
+
+
 }
