@@ -26,7 +26,7 @@ Create the following tables in the crawler database:
 ```
 
 Download the repository and in the DB class change the constructor to match
-the port number to match your Postgres server.
+the port number of your Postgres server.
 
 Run `mvn package`.  The jar file produced can then be run with default values.
 
