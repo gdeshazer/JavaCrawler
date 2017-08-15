@@ -4,13 +4,15 @@ import com.database.Cleaner;
 import com.database.DB;
 
 import java.io.IOException;
+
 import java.net.URI;
 import java.net.URISyntaxException;
+
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+
 import java.util.HashSet;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -125,7 +127,6 @@ public class Spider {
                 capturedURL.add(capturedURLSDB.getString("url"));
             }
 
-            //need to have !capturedURL.contains() otherwise the filter throws out everything except what is already in DB
             newPageSql = newPageSql.stream().filter(s -> !capturedURL.contains(s)).collect(Collectors.toList());
 
             _streamCheck = newPageSql;
