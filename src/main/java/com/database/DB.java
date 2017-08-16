@@ -4,6 +4,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.sql.*;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -120,6 +121,20 @@ public class DB {
 
         return urlSet;
     }
+
+    public void commitUrlsToDB(List<String> newUrls) {
+        newUrls.stream().forEach(s -> {
+            try {
+                PreparedStatement statement1 = connection.prepareStatement("insert into record (url, visited) values (?, false);");
+                statement1.setString(1, s);
+                statement1.execute();
+            } catch (Exception e) {
+                System.err.println("Failed to update database");
+                e.printStackTrace();
+            }
+        });
+    }
+
 
     @Override
     protected void finalize() throws  Throwable {

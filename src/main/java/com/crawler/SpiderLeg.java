@@ -58,7 +58,7 @@ public class SpiderLeg {
         }
     }
 
-    public List<String> getPages(){
+    public List<String> getNewUrls(){
         List<String> output = links.stream().collect(Collectors.toList());
         return output;
     }

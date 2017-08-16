@@ -130,5 +130,9 @@ public class DBTest {
     }
 
 
+    @Test
+    public void commitUrlsToDBTest(){
+        //TODO: Test for adding urls to DB
+    }
 
 }

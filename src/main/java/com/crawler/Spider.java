@@ -105,38 +105,29 @@ public class Spider {
     }
 
 
-    public void processPage(String url) throws SQLException, IOException{
-        String sql = "";
+    public void processPage(String url) throws SQLException, IOException {
+
         String currentURL = "";
 
         SpiderLeg leg = new SpiderLeg();
 
         currentURL = getUnvisitedStartingURL(url);
 
-        while(_visitedPages <= MAX_PAGES_TO_SEARCH) {
+        while (_visitedPages <= MAX_PAGES_TO_SEARCH) {
 
             leg.crawl(currentURL);
 
-            List<String> newPageSql  = leg.getPages();
+            List<String> newUrls = leg.getNewUrls();
 
             Set<String> capturedURL = db.getUrls();
 
-            newPageSql = filterUrls(currentURL, newPageSql, capturedURL);
+            newUrls = filterUrls(currentURL, newUrls, capturedURL);
 
-            newPageSql.stream().forEach(s -> {
-                try {
-                    PreparedStatement statement1 = db.connection.prepareStatement("insert into record (url, visited) values (?, false);");
-                    statement1.setString(1, s);
-                    statement1.execute();
-                } catch (Exception e) {
-                    System.err.println("Failed to update database");
-                    e.printStackTrace();
-                }
-            });
+            db.commitUrlsToDB(newUrls);
 
-            try{
+            try {
                 Thread.sleep(DELAY_TO_REQUEST);
-            } catch (Exception e){
+            } catch (Exception e) {
                 System.err.println("Failed to sleep");
                 e.printStackTrace();
             }
@@ -145,7 +136,6 @@ public class Spider {
         }
 
         System.out.println("Collected and stored " + _totalLinks + " web links in this crawl session.  Cleaning up DB...");
-
     }
 
 
